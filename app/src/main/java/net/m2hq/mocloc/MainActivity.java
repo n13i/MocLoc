@@ -13,11 +13,22 @@ public class MainActivity extends AppCompatActivity
     protected void onCreate(Bundle savedInstanceState)
     {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+        //setContentView(R.layout.activity_main);
 
-        if (!isServiceRunning())
+        if ("net.m2hq.mocloc.action.STOP_SERVICE".equals(getIntent().getAction()))
         {
-            startService(new Intent(getApplication(), MockLocationService.class));
+            stopService(new Intent(getApplication(), MockLocationService.class));
+        }
+        else
+        {
+            if (!isServiceRunning())
+            {
+                startService(new Intent(getApplication(), MockLocationService.class));
+            }
+            else
+            {
+                stopService(new Intent(getApplication(), MockLocationService.class));
+            }
         }
 
         finish();

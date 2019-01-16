@@ -2,6 +2,7 @@ package net.m2hq.mocloc;
 
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.location.Criteria;
@@ -46,6 +47,8 @@ public class MockLocationService extends Service
     private int mSatellitesCount = 0;
     private int mSatellitesUsed = 0;
 
+    private Timer mNotificationTimer;
+
     @Override
     public void onCreate()
     {
@@ -56,6 +59,7 @@ public class MockLocationService extends Service
         mBuilder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(getString(R.string.app_name))
                 .setOngoing(true)
+                .setContentIntent(PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), 0))
                 .setSmallIcon(R.drawable.ic_gps_off);
 
         mLocation = new Location(LocationManager.GPS_PROVIDER);
@@ -85,8 +89,8 @@ public class MockLocationService extends Service
                 showNotification();
             }
         };
-        Timer t = new Timer();
-        t.scheduleAtFixedRate(task, 0, 2000);
+        mNotificationTimer = new Timer();
+        mNotificationTimer.scheduleAtFixedRate(task, 0, 2000);
     }
 
     @Override
@@ -101,6 +105,8 @@ public class MockLocationService extends Service
     {
         super.onDestroy();
 
+        mUDPReceiveThread.interrupt();
+        mNotificationTimer.cancel();
         NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID);
 
         mLocationManager.removeTestProvider(LocationManager.GPS_PROVIDER);
@@ -159,7 +165,6 @@ public class MockLocationService extends Service
 
     class UDPReceiveThread extends Thread
     {
-        private boolean mIsRunning;
         private long mLastReceived = 0;
 
         public UDPReceiveThread()
@@ -187,8 +192,7 @@ public class MockLocationService extends Service
             byte buf[] = new byte[1024];
             DatagramPacket packet = new DatagramPacket(buf, buf.length);
 
-            mIsRunning = true;
-            while (mIsRunning)
+            while (true)
             {
                 try
                 {
@@ -205,6 +209,15 @@ public class MockLocationService extends Service
                 catch (Exception e)
                 {
                     e.printStackTrace();
+                }
+
+                try
+                {
+                    Thread.sleep(100);
+                }
+                catch (InterruptedException e)
+                {
+                    break;
                 }
             }
 
