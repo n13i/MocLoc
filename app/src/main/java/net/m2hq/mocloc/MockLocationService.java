@@ -49,6 +49,10 @@ public class MockLocationService extends Service
 
     private Timer mNotificationTimer;
 
+    private int mLastProviderStatus = LocationProvider.TEMPORARILY_UNAVAILABLE;
+
+    private static final int CONNECT_TIMEOUT = 2000;
+
     @Override
     public void onCreate()
     {
@@ -65,19 +69,6 @@ public class MockLocationService extends Service
         mLocation = new Location(LocationManager.GPS_PROVIDER);
 
         mLocationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
-        mLocationManager.addTestProvider(
-                LocationManager.GPS_PROVIDER,
-                false,
-                false,
-                false,
-                false,
-                true,
-                true,
-                false,
-                Criteria.POWER_LOW,
-                Criteria.ACCURACY_FINE);
-        mLocationManager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, true);
-        mLocationManager.setTestProviderStatus(LocationManager.GPS_PROVIDER, LocationProvider.AVAILABLE, null, SystemClock.elapsedRealtime());
 
         mUDPReceiveThread = new UDPReceiveThread();
         mUDPReceiveThread.start();
@@ -86,11 +77,11 @@ public class MockLocationService extends Service
             @Override
             public void run()
             {
-                showNotification();
+                updateLocation();
             }
         };
         mNotificationTimer = new Timer();
-        mNotificationTimer.scheduleAtFixedRate(task, 0, 2000);
+        mNotificationTimer.scheduleAtFixedRate(task, 0, 500);
     }
 
     @Override
@@ -137,6 +128,46 @@ public class MockLocationService extends Service
         }
     }
 
+    private void updateLocation()
+    {
+        int status;
+
+        if (mUDPReceiveThread.isConnected() && mGpsFixed)
+        {
+            status = LocationProvider.AVAILABLE;
+            if (mLastProviderStatus != LocationProvider.AVAILABLE)
+            {
+                mLocationManager.addTestProvider(
+                        LocationManager.GPS_PROVIDER,
+                        false,
+                        false,
+                        false,
+                        false,
+                        true,
+                        true,
+                        false,
+                        Criteria.POWER_LOW,
+                        Criteria.ACCURACY_FINE);
+                mLocationManager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, true);
+                mLocationManager.setTestProviderStatus(LocationManager.GPS_PROVIDER, status, null, SystemClock.elapsedRealtime());
+            }
+
+            mLocationManager.setTestProviderLocation(LocationManager.GPS_PROVIDER, mLocation);
+        }
+        else
+        {
+            status = LocationProvider.TEMPORARILY_UNAVAILABLE;
+            if (mLastProviderStatus == LocationProvider.AVAILABLE)
+            {
+                mLocationManager.removeTestProvider(LocationManager.GPS_PROVIDER);
+            }
+        }
+
+        mLastProviderStatus = status;
+
+        showNotification();
+    }
+
     private void showNotification()
     {
         if (!mUDPReceiveThread.isConnected())
@@ -149,11 +180,12 @@ public class MockLocationService extends Service
             SimpleDateFormat df = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US);
             String date = df.format(mLocation.getTime());
 
-            if (mGpsFixed)
+            if (mLastProviderStatus == LocationProvider.AVAILABLE)
             {
                 mBuilder.setContentText(String.format(Locale.US, "%s | FIXED | Sats %d/%d", date, mSatellitesUsed, mSatellitesCount));
                 mBuilder.setSmallIcon(R.drawable.ic_gps_fixed);
-            } else
+            }
+            else
             {
                 mBuilder.setContentText(String.format(Locale.US, "%s | NO FIX", date));
                 mBuilder.setSmallIcon(R.drawable.ic_gps_not_fixed);
@@ -189,7 +221,7 @@ public class MockLocationService extends Service
         @Override
         public void run()
         {
-            byte buf[] = new byte[1024];
+            byte buf[] = new byte[2048];
             DatagramPacket packet = new DatagramPacket(buf, buf.length);
 
             while (true)
@@ -204,7 +236,7 @@ public class MockLocationService extends Service
                     JSONObject json = new JSONObject(str);
 
                     //System.out.println(str);
-                    updateLocation(json);
+                    setLocation(json);
                 }
                 catch (Exception e)
                 {
@@ -213,7 +245,7 @@ public class MockLocationService extends Service
 
                 try
                 {
-                    Thread.sleep(100);
+                    Thread.sleep(50);
                 }
                 catch (InterruptedException e)
                 {
@@ -227,11 +259,11 @@ public class MockLocationService extends Service
 
         public boolean isConnected()
         {
-            return System.currentTimeMillis() <= (mLastReceived + 5000);
+            return System.currentTimeMillis() <= (mLastReceived + CONNECT_TIMEOUT);
         }
     }
 
-    private void updateLocation(JSONObject json)
+    private void setLocation(JSONObject json)
     {
         // http://catb.org/gpsd/gpsd_json.html
         try
@@ -309,8 +341,6 @@ public class MockLocationService extends Service
                     {
                         mLocation.setAccuracy(500);
                     }
-
-                    mLocationManager.setTestProviderLocation(LocationManager.GPS_PROVIDER, mLocation);
                 }
 
                 if (cls.equals("SKY"))
@@ -327,8 +357,6 @@ public class MockLocationService extends Service
                     }
                     mSatellitesCount = sats.length();
                 }
-
-                showNotification();
             }
         }
         catch (JSONException e)
