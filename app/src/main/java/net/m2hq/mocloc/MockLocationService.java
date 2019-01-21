@@ -100,7 +100,10 @@ public class MockLocationService extends Service
         mNotificationTimer.cancel();
         NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID);
 
-        mLocationManager.removeTestProvider(LocationManager.GPS_PROVIDER);
+        if (mLastProviderStatus == LocationProvider.AVAILABLE)
+        {
+            mLocationManager.removeTestProvider(LocationManager.GPS_PROVIDER);
+        }
     }
 
     @Nullable
