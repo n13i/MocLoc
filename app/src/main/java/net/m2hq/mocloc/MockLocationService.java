@@ -15,6 +15,7 @@ import android.os.SystemClock;
 import android.support.annotation.Nullable;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.NotificationManagerCompat;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -53,6 +54,8 @@ public class MockLocationService extends Service
 
     private static final int CONNECT_TIMEOUT = 2000;
 
+    private final static String TAG = MockLocationService.class.getSimpleName();
+
     @Override
     public void onCreate()
     {
@@ -77,11 +80,11 @@ public class MockLocationService extends Service
             @Override
             public void run()
             {
-                updateLocation();
+                showNotification();
             }
         };
         mNotificationTimer = new Timer();
-        mNotificationTimer.scheduleAtFixedRate(task, 0, 500);
+        mNotificationTimer.scheduleAtFixedRate(task, 0, 1000);
     }
 
     @Override
@@ -167,8 +170,6 @@ public class MockLocationService extends Service
         }
 
         mLastProviderStatus = status;
-
-        showNotification();
     }
 
     private void showNotification()
@@ -211,7 +212,7 @@ public class MockLocationService extends Service
             }
             catch (Exception e)
             {
-                e.printStackTrace();
+                Log.w(TAG, Log.getStackTraceString(e));
             }
         }
 
@@ -235,15 +236,20 @@ public class MockLocationService extends Service
 
                     mLastReceived = System.currentTimeMillis();
 
-                    String str = new String(buf, "UTF-8");
-                    JSONObject json = new JSONObject(str);
+                    String str = new String(buf, 0, packet.getLength(), "UTF-8");
+                    Log.v(TAG, "received json: " + str);
 
-                    //System.out.println(str);
-                    setLocation(json);
+                    String[] lines = str.split("\n", 0);
+                    for (String s : lines)
+                    {
+                        JSONObject json = new JSONObject(s);
+                        setLocation(json);
+                    }
+                    updateLocation();
                 }
                 catch (Exception e)
                 {
-                    e.printStackTrace();
+                    Log.w(TAG, Log.getStackTraceString(e));
                 }
 
                 try
@@ -268,6 +274,8 @@ public class MockLocationService extends Service
 
     private void setLocation(JSONObject json)
     {
+        Log.v(TAG, "setLocation: " + json.toString());
+
         // http://catb.org/gpsd/gpsd_json.html
         try
         {
@@ -336,7 +344,7 @@ public class MockLocationService extends Service
                         }
                         catch(ParseException e)
                         {
-                            e.printStackTrace();
+                            Log.w(TAG, Log.getStackTraceString(e));
                         }
                     }
 
@@ -364,7 +372,7 @@ public class MockLocationService extends Service
         }
         catch (JSONException e)
         {
-            e.printStackTrace();
+            Log.w(TAG, Log.getStackTraceString(e));
         }
     }
 }
