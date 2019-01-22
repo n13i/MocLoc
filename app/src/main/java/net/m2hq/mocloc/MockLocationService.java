@@ -23,6 +23,7 @@ import org.json.JSONObject;
 
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.SocketTimeoutException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -107,6 +108,8 @@ public class MockLocationService extends Service
         {
             mLocationManager.removeTestProvider(LocationManager.GPS_PROVIDER);
         }
+
+        Log.v(TAG, "onDestroy finished");
     }
 
     @Nullable
@@ -181,8 +184,9 @@ public class MockLocationService extends Service
         }
         else
         {
-            SimpleDateFormat df = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US);
-            String date = df.format(mLocation.getTime());
+            //SimpleDateFormat df = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US);
+            //String date = df.format(mLocation.getTime());
+            String date = String.format(Locale.US, "%d seconds ago", mUDPReceiveThread.getSecondsSinceLastReceived());
 
             if (mLastProviderStatus == LocationProvider.AVAILABLE)
             {
@@ -209,6 +213,7 @@ public class MockLocationService extends Service
             try
             {
                 mDatagramSocket = new DatagramSocket(12947);
+                mDatagramSocket.setSoTimeout(100);
             }
             catch (Exception e)
             {
@@ -225,14 +230,30 @@ public class MockLocationService extends Service
         @Override
         public void run()
         {
-            byte buf[] = new byte[2048];
+            byte buf[] = new byte[4096];
             DatagramPacket packet = new DatagramPacket(buf, buf.length);
 
             while (true)
             {
                 try
                 {
-                    mDatagramSocket.receive(packet);
+                    Thread.sleep(10);
+                }
+                catch (InterruptedException e)
+                {
+                    break;
+                }
+
+                try
+                {
+                    try
+                    {
+                        mDatagramSocket.receive(packet);
+                    }
+                    catch (SocketTimeoutException e)
+                    {
+                        continue;
+                    }
 
                     mLastReceived = System.currentTimeMillis();
 
@@ -251,24 +272,21 @@ public class MockLocationService extends Service
                 {
                     Log.w(TAG, Log.getStackTraceString(e));
                 }
-
-                try
-                {
-                    Thread.sleep(50);
-                }
-                catch (InterruptedException e)
-                {
-                    break;
-                }
             }
 
             mDatagramSocket.close();
+            Log.v(TAG, String.format(Locale.US, "%s: socket is %s", this.getName(), mDatagramSocket.isClosed() ? "closed" : "not closed"));
             mDatagramSocket = null;
         }
 
         public boolean isConnected()
         {
             return System.currentTimeMillis() <= (mLastReceived + CONNECT_TIMEOUT);
+        }
+
+        public long getSecondsSinceLastReceived()
+        {
+            return (System.currentTimeMillis() - mLastReceived) / 1000;
         }
     }
 
