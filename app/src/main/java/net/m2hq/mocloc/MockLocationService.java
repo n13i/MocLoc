@@ -54,6 +54,7 @@ public class MockLocationService extends Service
     private int mLastProviderStatus = LocationProvider.TEMPORARILY_UNAVAILABLE;
 
     private static final int CONNECT_TIMEOUT = 2000;
+    private static final float SPEED_UPDATE_THRESHOLD = 0.833f; // about 3km/h
 
     private final static String TAG = MockLocationService.class.getSimpleName();
 
@@ -92,6 +93,7 @@ public class MockLocationService extends Service
     public int onStartCommand(Intent intent, int flags, int startId)
     {
         super.onStartCommand(intent, flags, startId);
+        startForeground(NOTIFICATION_ID, mBuilder.build());
         return START_STICKY;
     }
 
@@ -101,6 +103,15 @@ public class MockLocationService extends Service
         super.onDestroy();
 
         mUDPReceiveThread.interrupt();
+        try
+        {
+            mUDPReceiveThread.join(1000);
+        }
+        catch (InterruptedException e)
+        {
+            Log.w(TAG, Log.getStackTraceString(e));
+        }
+
         mNotificationTimer.cancel();
         NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID);
 
@@ -108,6 +119,8 @@ public class MockLocationService extends Service
         {
             mLocationManager.removeTestProvider(LocationManager.GPS_PROVIDER);
         }
+
+        stopSelf();
 
         Log.v(TAG, "onDestroy finished");
     }
@@ -184,20 +197,22 @@ public class MockLocationService extends Service
         }
         else
         {
-            //SimpleDateFormat df = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US);
-            //String date = df.format(mLocation.getTime());
-            String date = String.format(Locale.US, "%d seconds ago", mUDPReceiveThread.getSecondsSinceLastReceived());
+            SimpleDateFormat df = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US);
+            String date = df.format(mLocation.getTime());
+            //String date = String.format(Locale.US, "%d seconds ago", mUDPReceiveThread.getSecondsSinceLastReceived());
+            String fixed;
 
             if (mLastProviderStatus == LocationProvider.AVAILABLE)
             {
-                mBuilder.setContentText(String.format(Locale.US, "%s | FIXED | Sats %d/%d", date, mSatellitesUsed, mSatellitesCount));
+                fixed = "FIXED";
                 mBuilder.setSmallIcon(R.drawable.ic_gps_fixed);
             }
             else
             {
-                mBuilder.setContentText(String.format(Locale.US, "%s | NO FIX", date));
+                fixed = "NO FIX";
                 mBuilder.setSmallIcon(R.drawable.ic_gps_not_fixed);
             }
+            mBuilder.setContentText(String.format(Locale.US, "%s | %s | Sats %d/%d", date, fixed, mSatellitesUsed, mSatellitesCount));
         }
 
         NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, mBuilder.build());
@@ -292,8 +307,6 @@ public class MockLocationService extends Service
 
     private void setLocation(JSONObject json)
     {
-        Log.v(TAG, "setLocation: " + json.toString());
-
         // http://catb.org/gpsd/gpsd_json.html
         try
         {
@@ -323,7 +336,12 @@ public class MockLocationService extends Service
 
                     if (json.has("speed"))
                     {
-                        mLocation.setSpeed((float)json.getDouble("speed"));
+                        float speed = (float)json.getDouble("speed");
+                        if (speed < SPEED_UPDATE_THRESHOLD)
+                        {
+                            speed = 0;
+                        }
+                        mLocation.setSpeed(speed);
                     }
 
                     if (json.has("track"))
@@ -370,9 +388,10 @@ public class MockLocationService extends Service
                     {
                         mLocation.setAccuracy(500);
                     }
-                }
 
-                if (cls.equals("SKY"))
+                    Log.v(TAG, String.format("setLocation: TPV %s %s", json.getString("time"), mLocation.toString()));
+                }
+                else if (cls.equals("SKY"))
                 {
                     mSatellitesUsed = 0;
                     JSONArray sats = json.getJSONArray("satellites");
@@ -385,6 +404,12 @@ public class MockLocationService extends Service
                         }
                     }
                     mSatellitesCount = sats.length();
+
+                    Log.v(TAG, String.format("setLocation: SKY %s", json.toString()));
+                }
+                else
+                {
+                    Log.v(TAG, String.format("setLocation: class %s is unused", cls));
                 }
             }
         }
