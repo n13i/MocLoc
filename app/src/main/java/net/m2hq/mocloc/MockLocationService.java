@@ -51,10 +51,15 @@ public class MockLocationService extends Service
 
     private Timer mNotificationTimer;
 
+    private M5Hud mM5Hud;
+    private Timer mBtSendTimer;
+
     private int mLastProviderStatus = LocationProvider.TEMPORARILY_UNAVAILABLE;
 
     private static final int CONNECT_TIMEOUT = 2000;
     private static final float SPEED_UPDATE_THRESHOLD = 0.833f; // about 3km/h
+
+    private static final float HUD_BEARING_UPDATE_THRESHOLD = 1.389f; // about 5km/h
 
     private final static String TAG = MockLocationService.class.getSimpleName();
 
@@ -87,6 +92,18 @@ public class MockLocationService extends Service
         };
         mNotificationTimer = new Timer();
         mNotificationTimer.scheduleAtFixedRate(task, 0, 1000);
+
+        mM5Hud = new M5Hud();
+
+        TimerTask btSendTask = new TimerTask() {
+            @Override
+            public void run()
+            {
+                sendBt();
+            }
+        };
+        mBtSendTimer = new Timer();
+        mBtSendTimer.scheduleAtFixedRate(btSendTask, 0, 1000);
     }
 
     @Override
@@ -114,6 +131,9 @@ public class MockLocationService extends Service
 
         mNotificationTimer.cancel();
         NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID);
+
+        mBtSendTimer.cancel();
+        mM5Hud.close();
 
         if (mLastProviderStatus == LocationProvider.AVAILABLE)
         {
@@ -216,6 +236,30 @@ public class MockLocationService extends Service
         }
 
         NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, mBuilder.build());
+    }
+
+    private void sendBt()
+    {
+        if (!mM5Hud.isConnected())
+        {
+            mM5Hud.connect();
+        }
+
+        if (mM5Hud.isConnected())
+        {
+            //mM5Hud.setTime(mLocation.getTime());
+            mM5Hud.setTime(System.currentTimeMillis());
+            mM5Hud.setSatUsed(mSatellitesUsed);
+            mM5Hud.setSatCount(mSatellitesCount);
+            mM5Hud.setSpeed(mLocation.getSpeed());
+            if (mLocation.getSpeed() >= HUD_BEARING_UPDATE_THRESHOLD)
+            {
+                // keep previous bearing while speed < threshold
+                mM5Hud.setBearing(mLocation.getBearing());
+            }
+
+            mM5Hud.send();
+        }
     }
 
     class UDPReceiveThread extends Thread
